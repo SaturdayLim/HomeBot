@@ -21,6 +21,11 @@ from importer import generate_template_csv, parse_import_csv
 import reminders
 
 load_dotenv()
+
+import sys
+print(f"BOT_TOKEN present: {bool(os.getenv('BOT_TOKEN'))}", file=sys.stderr)
+print(f"BOT_TOKEN length: {len(os.getenv('BOT_TOKEN', ''))}", file=sys.stderr)
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
