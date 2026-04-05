@@ -56,6 +56,32 @@ def format_summary_card(listing: dict, notes: list, media_count: int) -> str:
 
     return "\n".join(lines)
 
+def format_quick_card(listing: dict) -> str:
+    """Compact card shown on first tap — no notes or agent. Has a Full details button."""
+    nick   = listing["nickname"]
+    rating = listing.get("rating", "UNRATED")
+    lines  = [f"*{nick}*", f"{RATING_EMOJI[rating]} {RATING_LABEL[rating]}", ""]
+
+    if listing.get("address"):    lines.append(f"📍 {listing['address']}")
+    if listing.get("rent_sgd"):   lines.append(f"💰 SGD ${listing['rent_sgd']:,}/mo")
+    if listing.get("size_sqft"):
+        sz = f"📐 {listing['size_sqft']:,} sqft"
+        if listing.get("floor_level"):
+            sz += f"  ·  Floor {listing['floor_level']}"
+        lines.append(sz)
+    if listing.get("mrt"):        lines.append(f"🚇 {listing['mrt']}")
+    if listing.get("viewing_dt"): lines.append(f"📅 Viewing: {listing['viewing_dt']}")
+
+    na_owner = listing.get("na_owner")
+    na_desc  = listing.get("na_desc")
+    na_due   = listing.get("na_due")
+    if na_owner and na_desc:
+        lines += ["", "⏭ *Next action*"]
+        due_str = f"  ·  due {na_due}" if na_due else ""
+        lines.append(f"→ {na_owner}:  {na_desc}{due_str}")
+
+    return "\n".join(lines)
+
 def format_details_list(listings: list) -> str:
     if not listings:
         return "No active listings yet. Add one with /add [url]"

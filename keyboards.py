@@ -13,6 +13,16 @@ RATINGS = [
 
 OWNERS = ["Michael", "Natalie", "Agent"]
 
+EDIT_FIELDS = [
+    ("📍 Location",            "address"),
+    ("💰 Listed price (SGD)",  "rent_sgd"),
+    ("📐 Floor size (sqft)",   "size_sqft"),
+    ("🏢 Floor level",         "floor_level"),
+    ("🚇 MRT",                 "mrt"),
+    ("👤 Agent name",          "agent_name"),
+    ("📞 Agent contact",       "agent_contact"),
+]
+
 def listing_picker(nicknames: list, action: str) -> InlineKeyboardMarkup:
     buttons = [
         [InlineKeyboardButton(n, callback_data=f"{action}:{n}")]
@@ -63,4 +73,16 @@ def archive_confirm(nickname: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("🗂 Yes, archive", callback_data=f"archive_confirm:{nickname}"),
         InlineKeyboardButton("✕ Cancel",        callback_data="cancel"),
+    ]])
+
+def field_picker(nickname: str) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(label, callback_data=f"edit_field:{nickname}:{field}")]
+        for label, field in EDIT_FIELDS
+    ]
+    return InlineKeyboardMarkup(buttons)
+
+def full_details_button(nickname: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton("📋 Full details", callback_data=f"full_view:{nickname}"),
     ]])

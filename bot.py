@@ -21,11 +21,6 @@ from importer import generate_template_csv, parse_import_csv
 import reminders
 
 load_dotenv()
-
-import sys
-print(f"BOT_TOKEN present: {bool(os.getenv('BOT_TOKEN'))}", file=sys.stderr)
-print(f"BOT_TOKEN length: {len(os.getenv('BOT_TOKEN', ''))}", file=sys.stderr)
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -39,6 +34,7 @@ AWAIT_STATUS_DESC   = "await_status_desc"
 AWAIT_STATUS_DATE   = "await_status_date"
 AWAIT_PHOTO_NOTE    = "await_photo_note"
 AWAIT_IMPORT_RENAME = "await_import_rename"
+AWAIT_EDIT_VALUE    = "await_edit_value"
 
 def sender_name(update: Update) -> str:
     uid = update.effective_user.id
@@ -83,6 +79,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/add [url]` — add a listing\n"
         "`/import` — bulk import via CSV\n"
         "`/details` — view shortlist\n"
+        "`/edit` — edit a listing's fields\n"
         "`/note [text]` — add a note\n"
         "`/rate` — rate a listing\n"
         "`/status` — set next action\n"
@@ -182,6 +179,13 @@ async def cmd_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await reply(update, f"No media attached to *{nick}* yet.\nSend a photo and I'll ask which listing it's for.")
     else:
         await reply(update, f"📎 *{nick}* has {count} photo{'s' if count != 1 else ''} attached.")
+
+async def cmd_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    nicks = await active_nicknames()
+    if not nicks:
+        await reply(update, "No listings saved yet. Use `/add` first."); return
+    await reply(update, "Which listing do you want to edit?",
+                kb.listing_picker(nicks, "edit_listing"))
 
 async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
     csv_bytes = generate_template_csv()
@@ -293,6 +297,21 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _show_import_row(update, context, idx)
         return
 
+    if state == AWAIT_EDIT_VALUE:
+        nick  = context.user_data.get("edit_nick")
+        field = context.user_data.get("edit_field")
+        label = context.user_data.get("edit_label", field)
+        value = text
+        if field in ("rent_sgd", "size_sqft"):
+            try:
+                value = int(float(text.replace(",", "").replace("$", "").strip()))
+            except ValueError:
+                await reply(update, f"⚠️ Please enter a number for *{label}* (e.g. `3200`)."); return
+        await db.update_listing_field(nick, field, value)
+        context.user_data.pop("state", None)
+        await reply(update, f"✓ *{nick}* updated:\n*{label}* → {text}")
+        return
+
     if text.startswith("http"):
         await reply(update,
             "To add a listing use:\n`/add [url]`\n"
@@ -306,6 +325,22 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data  = query.data
 
     if data.startswith("view_listing:"):
+        nick    = data.split(":", 1)[1]
+        listing = await db.get_listing(nick)
+        if not listing:
+            await query.message.reply_text("Listing not found."); return
+        na = await db.get_next_action(nick)
+        if na:
+            listing["na_owner"] = na["owner"]
+            listing["na_desc"]  = na["description"]
+            listing["na_due"]   = na["due_date"]
+        await query.message.reply_text(
+            fmt.format_quick_card(listing),
+            reply_markup=kb.full_details_button(nick),
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if data.startswith("full_view:"):
         nick        = data.split(":", 1)[1]
         listing     = await db.get_listing(nick)
         if not listing:
@@ -317,8 +352,27 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             listing["na_owner"] = na["owner"]
             listing["na_desc"]  = na["description"]
             listing["na_due"]   = na["due_date"]
-        await query.message.reply_text(
-            fmt.format_summary_card(listing, notes, media_count), parse_mode=ParseMode.MARKDOWN)
+        await edit_or_reply(update,
+            fmt.format_summary_card(listing, notes, media_count))
+        return
+
+    if data.startswith("edit_listing:"):
+        nick = data.split(":", 1)[1]
+        await query.edit_message_text(
+            f"Which field do you want to edit for *{nick}*?",
+            reply_markup=kb.field_picker(nick), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if data.startswith("edit_field:"):
+        parts       = data.split(":", 2)
+        nick, field = parts[1], parts[2]
+        label       = next((l for l, f in kb.EDIT_FIELDS if f == field), field)
+        context.user_data["edit_nick"]  = nick
+        context.user_data["edit_field"] = field
+        context.user_data["edit_label"] = label
+        context.user_data["state"]      = AWAIT_EDIT_VALUE
+        hint = " *(numbers only)*" if field in ("rent_sgd", "size_sqft") else ""
+        await edit_or_reply(update, f"Enter the new value for *{label}*{hint}:")
         return
 
     if data.startswith("note_listing:"):
@@ -515,6 +569,7 @@ def main():
     app.add_handler(CommandHandler("archived", cmd_archived))
     app.add_handler(CommandHandler("restore",  cmd_restore))
     app.add_handler(CommandHandler("media",    cmd_media))
+    app.add_handler(CommandHandler("edit",     cmd_edit))
     app.add_handler(CommandHandler("import",   cmd_import))
     app.add_handler(MessageHandler(filters.PHOTO,            handle_photo))
     app.add_handler(MessageHandler(filters.Document.ALL,     handle_document))

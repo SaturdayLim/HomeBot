@@ -255,3 +255,18 @@ async def get_next_action(nickname: str) -> Optional[dict]:
         """, (nickname,)) as cur:
             row = await cur.fetchone()
             return dict(row) if row else None
+
+EDITABLE_FIELDS = frozenset({
+    "address", "rent_sgd", "size_sqft", "floor_level",
+    "mrt", "agent_name", "agent_contact",
+})
+
+async def update_listing_field(nickname: str, field: str, value):
+    if field not in EDITABLE_FIELDS:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            f"UPDATE listings SET {field}=?, updated_at=datetime('now') WHERE nickname=?",
+            (value, nickname)
+        )
+        await db.commit()
