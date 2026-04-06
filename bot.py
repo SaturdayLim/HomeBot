@@ -137,15 +137,20 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not url and not manual:
         await reply(update,
-            "*Add a listing*\n\n"
-            "URL only:\n`/add https://propertyguru.com.sg/...`\n\n"
-            "With details (any line can be blank or `-` to skip):\n"
-            "`/add [url or blank]`\n"
-            "`[location]`\n"
-            "`[price SGD]`\n"
-            "`[sqft]`\n"
-            "`[mrt distance]`\n"
-            "`[agent name, contact]`")
+            "**/add** — add a listing\n\n"
+            "*URL only:*\n"
+            "`/add https://propertyguru.com.sg/...`\n\n"
+            "*With fields (send as one message):*\n"
+            "```\n"
+            "/add https://... (or leave blank)\n"
+            "Location / address\n"
+            "Price (SGD)\n"
+            "Floor size (sqft)\n"
+            "Distance to MRT\n"
+            "Agent name, contact number\n"
+            "```\n"
+            "Any line can be `-` or left blank to skip.\n"
+            "You'll be asked for a nickname after.")
         return
 
     if url:
