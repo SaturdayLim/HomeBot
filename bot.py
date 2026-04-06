@@ -4,6 +4,7 @@ bot.py — HomeBot: Rental tracker for Michael & Natalie
 
 import os
 import io
+import re
 import logging
 from dotenv import load_dotenv
 from telegram import Update
@@ -76,7 +77,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await reply(update,
         "*HomeBot commands*\n\n"
-        "`/add [url]` — add a listing\n"
+        "`/add [url]` — add a listing (or multi-line with all fields)\n"
         "`/import` — bulk import via CSV\n"
         "`/details` — view shortlist\n"
         "`/edit` — edit a listing's fields\n"
@@ -92,18 +93,72 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    args = context.args
-    if not args or not args[0].startswith("http"):
+    # Parse multi-line message:
+    #   /add [url]        ← url optional on first line or second line
+    #   [location]
+    #   [price SGD]
+    #   [sqft]
+    #   [mrt]
+    #   [agent name, contact]
+    full_text = update.message.text or ""
+    lines = [l.strip() for l in full_text.split("\n")]
+
+    # Pull URL from first line remainder or second line
+    first_parts = lines[0].split(None, 1)
+    rest = first_parts[1] if len(first_parts) > 1 else ""
+    url, pos_start = None, 1
+    if rest.startswith("http"):
+        url, pos_start = rest, 1
+    elif len(lines) > 1 and lines[1].startswith("http"):
+        url, pos_start = lines[1], 2
+
+    # Collect up to 5 positional fields
+    raw = (lines[pos_start:pos_start + 5] + [""] * 5)[:5]
+    loc_raw, price_raw, sqft_raw, mrt_raw, agent_raw = raw
+
+    manual = {}
+    if loc_raw and loc_raw != "-":
+        manual["address"] = loc_raw
+    if price_raw and price_raw != "-":
+        digits = re.sub(r"[^\d]", "", price_raw)
+        if digits:
+            manual["rent_sgd"] = int(digits)
+    if sqft_raw and sqft_raw != "-":
+        digits = re.sub(r"[^\d]", "", sqft_raw)
+        if digits:
+            manual["size_sqft"] = int(digits)
+    if mrt_raw and mrt_raw != "-":
+        manual["mrt"] = mrt_raw
+    if agent_raw and agent_raw != "-":
+        parts = agent_raw.split(",", 1)
+        manual["agent_name"] = parts[0].strip()
+        if len(parts) > 1:
+            manual["agent_contact"] = parts[1].strip()
+
+    if not url and not manual:
         await reply(update,
-            "Include a URL after /add\n"
-            "Example: `/add https://www.propertyguru.com.sg/listing/...`")
+            "*Add a listing*\n\n"
+            "URL only:\n`/add https://propertyguru.com.sg/...`\n\n"
+            "With details (any line can be blank or `-` to skip):\n"
+            "`/add [url or blank]`\n"
+            "`[location]`\n"
+            "`[price SGD]`\n"
+            "`[sqft]`\n"
+            "`[mrt distance]`\n"
+            "`[agent name, contact]`")
         return
-    await reply(update, "🔍 Parsing listing...")
-    data = await scrape_listing(args[0])
+
+    if url:
+        await reply(update, "🔍 Parsing listing...")
+        data = await scrape_listing(url)
+    else:
+        data = {}
+
+    data.update(manual)  # manual fields override scraped data
     card = format_parsed_card(data)
     context.user_data["pending_listing"] = data
     context.user_data["state"]           = AWAIT_NICKNAME
-    await reply(update, f"*Found a listing:*\n\n{card}\n\nWhat nickname do you want to save this as?")
+    await reply(update, f"*Listing details:*\n\n{card}\n\nWhat nickname do you want to save this as?")
 
 async def cmd_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     listings = await db.get_active_listings()
