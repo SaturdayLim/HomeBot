@@ -45,10 +45,13 @@ def owner_picker(nickname: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(buttons)
 
 def photo_note_prompt(nickname: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("📝 Yes, add a note", callback_data=f"photo_note_yes:{nickname}"),
-        InlineKeyboardButton("✓ No, that's all",   callback_data=f"photo_note_no:{nickname}"),
-    ]])
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("📝 Yes, add a note",    callback_data=f"photo_note_yes:{nickname}"),
+            InlineKeyboardButton("📐 Mark as floorplan",  callback_data=f"photo_floorplan:{nickname}"),
+        ],
+        [InlineKeyboardButton("✓ No, that's all",         callback_data=f"photo_note_no:{nickname}")],
+    ])
 
 def duplicate_picker(nickname: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
@@ -97,4 +100,11 @@ def note_picker(notes: list, nickname: str) -> InlineKeyboardMarkup:
 def full_details_button(nickname: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("📋 Full details", callback_data=f"full_view:{nickname}"),
+        InlineKeyboardButton("🤖 AI Summary",   callback_data=f"ai_summary:{nickname}"),
+    ]])
+
+def send_photos_button(nickname: str, count: int) -> InlineKeyboardMarkup:
+    label = f"📎 View {count} photo{'s' if count != 1 else ''}"
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(label, callback_data=f"send_photos:{nickname}"),
     ]])

@@ -213,17 +213,37 @@ async def delete_note(note_id: int):
         await db.execute("DELETE FROM notes WHERE id = ?", (note_id,))
         await db.commit()
 
-async def add_media(nickname: str, file_id: str, media_type: str = "PHOTO", caption: str = None):
+async def add_media(nickname: str, file_id: str, media_type: str = "PHOTO", caption: str = None) -> int:
+    """Insert a media row and return its new id (0 if listing not found)."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT id FROM listings WHERE nickname=?", (nickname,)) as cur:
             row = await cur.fetchone()
             if not row:
-                return
+                return 0
             listing_id = row[0]
-        await db.execute(
+        cur = await db.execute(
             "INSERT INTO media (listing_id, telegram_file_id, media_type, caption) VALUES (?, ?, ?, ?)",
             (listing_id, file_id, media_type, caption)
         )
+        await db.commit()
+        return cur.lastrowid
+
+async def get_media(nickname: str) -> list[dict]:
+    """Return all media rows for a listing, ordered oldest-first."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT m.* FROM media m
+            JOIN listings l ON l.id = m.listing_id
+            WHERE l.nickname = ?
+            ORDER BY m.created_at ASC
+        """, (nickname,)) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+async def update_media_caption(media_id: int, caption: str):
+    """Set or update the caption on a media row (used to mark a photo as 'Floorplan')."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE media SET caption=? WHERE id=?", (caption, media_id))
         await db.commit()
 
 async def get_media_count(nickname: str) -> int:

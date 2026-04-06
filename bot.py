@@ -7,7 +7,7 @@ import io
 import re
 import logging
 from dotenv import load_dotenv
-from telegram import Update
+from telegram import Update, InputMediaPhoto
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     CallbackQueryHandler, ContextTypes, filters,
@@ -20,6 +20,7 @@ import formatting as fmt
 from scraper import scrape_listing, format_parsed_card
 from importer import generate_template_csv, parse_import_csv
 import reminders
+import summariser
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -89,8 +90,11 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/archive` — hide a listing\n"
         "`/archived` — view archived listings\n"
         "`/restore [name]` — recover archived listing\n"
-        "`/media [name]` — check photos\n"
-        "`/import` — bulk import via CSV"
+        "`/media [name]` — check photos\n\n"
+        "📋 *Full details* button — all notes, agent info, next action\n"
+        "🤖 *AI Summary* button — Claude reads your notes and gives a verdict\n"
+        "📐 *Mark as floorplan* — tag one photo as the reference floorplan;\n"
+        "   it will appear automatically with full details / AI summary"
     )
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -417,19 +421,118 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if data.startswith("full_view:"):
-        nick        = data.split(":", 1)[1]
-        listing     = await db.get_listing(nick)
+        nick    = data.split(":", 1)[1]
+        listing = await db.get_listing(nick)
         if not listing:
             await query.message.reply_text("Listing not found."); return
-        notes       = await db.get_notes(nick)
-        media_count = await db.get_media_count(nick)
-        na          = await db.get_next_action(nick)
+        notes   = await db.get_notes(nick)
+        media   = await db.get_media(nick)
+        na      = await db.get_next_action(nick)
         if na:
             listing["na_owner"] = na["owner"]
             listing["na_desc"]  = na["description"]
             listing["na_due"]   = na["due_date"]
+
+        floorplan   = next((m for m in media if (m.get("caption") or "").lower() == "floorplan"), None)
+        other_count = sum(1 for m in media if (m.get("caption") or "").lower() != "floorplan")
+
+        if floorplan:
+            try:
+                await query.message.reply_photo(
+                    floorplan["telegram_file_id"],
+                    caption=f"📐 Floorplan — {nick}",
+                )
+            except Exception:
+                pass
+
+        keyboard = kb.send_photos_button(nick, other_count) if other_count > 0 else None
         await edit_or_reply(update,
-            fmt.format_summary_card(listing, notes, media_count))
+            fmt.format_summary_card(listing, notes, other_count),
+            keyboard=keyboard)
+        return
+
+    if data.startswith("ai_summary:"):
+        nick    = data.split(":", 1)[1]
+        listing = await db.get_listing(nick)
+        if not listing:
+            await query.message.reply_text("Listing not found."); return
+
+        # Show "thinking" state immediately
+        try:
+            await query.edit_message_text(
+                f"🤖 Generating AI summary for *{nick}*…",
+                parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            pass
+
+        notes  = await db.get_notes(nick)
+        media  = await db.get_media(nick)
+        na     = await db.get_next_action(nick)
+        if na:
+            listing["na_owner"] = na["owner"]
+            listing["na_desc"]  = na["description"]
+            listing["na_due"]   = na["due_date"]
+
+        floorplan   = next((m for m in media if (m.get("caption") or "").lower() == "floorplan"), None)
+        other_count = sum(1 for m in media if (m.get("caption") or "").lower() != "floorplan")
+
+        # Send floorplan photo separately (can't embed photos in text messages)
+        if floorplan:
+            try:
+                await query.message.reply_photo(
+                    floorplan["telegram_file_id"],
+                    caption=f"📐 Floorplan — {nick}",
+                )
+            except Exception:
+                pass
+
+        ai_text = await summariser.summarise_listing(listing, notes)
+        rating  = listing.get("rating", "UNRATED")
+
+        lines = [
+            f"*{nick}* — 🤖 AI Summary",
+            f"{fmt.RATING_EMOJI[rating]} {fmt.RATING_LABEL[rating]}",
+            "",
+            ai_text,
+        ]
+        if listing.get("agent_name"):
+            agent = listing["agent_name"]
+            if listing.get("agent_contact"):
+                agent += f"  ·  {listing['agent_contact']}"
+            lines += ["", f"👤 {agent}"]
+        na_owner = listing.get("na_owner")
+        na_desc  = listing.get("na_desc")
+        na_due   = listing.get("na_due")
+        if na_owner and na_desc:
+            due_str = f"  ·  due {na_due}" if na_due else ""
+            lines += ["", "⏭ *Next action*", f"→ {na_owner}:  {na_desc}{due_str}"]
+
+        keyboard = kb.send_photos_button(nick, other_count) if other_count > 0 else None
+        try:
+            await query.edit_message_text(
+                "\n".join(lines),
+                reply_markup=keyboard,
+                parse_mode=ParseMode.MARKDOWN)
+        except Exception:
+            await query.message.reply_text(
+                "\n".join(lines),
+                reply_markup=keyboard,
+                parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if data.startswith("send_photos:"):
+        nick   = data.split(":", 1)[1]
+        media  = await db.get_media(nick)
+        others = [m for m in media if (m.get("caption") or "").lower() != "floorplan"]
+        if not others:
+            await query.message.reply_text(f"No photos (other than floorplan) attached to *{nick}* yet.",
+                                           parse_mode=ParseMode.MARKDOWN)
+            return
+        batch = [InputMediaPhoto(media=m["telegram_file_id"]) for m in others[:10]]
+        try:
+            await query.message.reply_media_group(batch)
+        except Exception as e:
+            await query.message.reply_text(f"⚠️ Could not send photos: {e}")
         return
 
     if data.startswith("edit_listing:"):
@@ -519,10 +622,20 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         nick    = data.split(":", 1)[1]
         file_id = context.user_data.get("pending_photo_file_id")
         if file_id:
-            await db.add_media(nick, file_id)
+            media_id = await db.add_media(nick, file_id)
+            context.user_data["pending_media_id"] = media_id
         await query.edit_message_text(
-            f"📎 Photo attached to *{nick}*.\nWant to add a note with it?",
+            f"📎 Photo attached to *{nick}*.\nAdd a note, mark as floorplan, or leave as is?",
             reply_markup=kb.photo_note_prompt(nick), parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if data.startswith("photo_floorplan:"):
+        nick     = data.split(":", 1)[1]
+        media_id = context.user_data.pop("pending_media_id", None)
+        if media_id:
+            await db.update_media_caption(media_id, "Floorplan")
+        context.user_data.pop("pending_photo_file_id", None)
+        await edit_or_reply(update, f"📐 Floorplan saved for *{nick}*! It will appear automatically in full details.")
         return
 
     if data.startswith("photo_note_yes:"):
