@@ -82,6 +82,18 @@ def field_picker(nickname: str) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(buttons)
 
+def note_picker(notes: list, nickname: str) -> InlineKeyboardMarkup:
+    """One button per note — tap to delete."""
+    buttons = []
+    for n in notes:
+        preview = n.get("text") or "(photo only)"
+        label   = f"{n['sender']}: {preview[:35]}{'…' if len(preview) > 35 else ''}"
+        buttons.append([InlineKeyboardButton(
+            f"🗑 {label}", callback_data=f"delete_note:{n['id']}:{nickname}"
+        )])
+    buttons.append([InlineKeyboardButton("✕ Cancel", callback_data="cancel")])
+    return InlineKeyboardMarkup(buttons)
+
 def full_details_button(nickname: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
         InlineKeyboardButton("📋 Full details", callback_data=f"full_view:{nickname}"),

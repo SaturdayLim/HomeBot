@@ -208,6 +208,11 @@ async def get_notes(nickname: str) -> list[dict]:
         """, (nickname,)) as cur:
             return [dict(r) for r in await cur.fetchall()]
 
+async def delete_note(note_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+        await db.commit()
+
 async def add_media(nickname: str, file_id: str, media_type: str = "PHOTO", caption: str = None):
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT id FROM listings WHERE nickname=?", (nickname,)) as cur:

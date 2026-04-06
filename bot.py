@@ -82,6 +82,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/details` — view shortlist\n"
         "`/edit` — edit a listing's fields\n"
         "`/note [text]` — add a note\n"
+        "`/delnote` — delete a note\n"
         "`/rate` — rate a listing\n"
         "`/status` — set next action\n"
         "`/upcoming` — viewing appointments\n"
@@ -173,6 +174,13 @@ async def cmd_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text  = fmt.format_details_list(listings)
     nicks = [l["nickname"] for l in listings]
     await reply(update, text, kb.listing_picker(nicks, "view_listing"))
+
+async def cmd_delnote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    nicks = await active_nicknames()
+    if not nicks:
+        await reply(update, "No listings saved yet."); return
+    await reply(update, "Which listing has the note you want to remove?",
+                kb.listing_picker(nicks, "delnote_listing"))
 
 async def cmd_note(update: Update, context: ContextTypes.DEFAULT_TYPE):
     nicks = await active_nicknames()
@@ -451,6 +459,33 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await edit_or_reply(update, f"📝 Note added to *{nick}* by {sender}:\n_{text}_")
         return
 
+    if data.startswith("delnote_listing:"):
+        nick  = data.split(":", 1)[1]
+        notes = await db.get_notes(nick)
+        if not notes:
+            await edit_or_reply(update, f"No notes on *{nick}* yet."); return
+        await query.edit_message_text(
+            f"Tap a note to delete it from *{nick}*:",
+            reply_markup=kb.note_picker(notes, nick),
+            parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if data.startswith("delete_note:"):
+        parts     = data.split(":", 2)
+        note_id   = int(parts[1])
+        nick      = parts[2]
+        await db.delete_note(note_id)
+        # Refresh the note list in-place
+        notes = await db.get_notes(nick)
+        if notes:
+            await query.edit_message_text(
+                f"✓ Note deleted. Remaining notes on *{nick}* (tap to delete):",
+                reply_markup=kb.note_picker(notes, nick),
+                parse_mode=ParseMode.MARKDOWN)
+        else:
+            await edit_or_reply(update, f"✓ Note deleted. *{nick}* has no more notes.")
+        return
+
     if data.startswith("rate_listing:"):
         nick = data.split(":", 1)[1]
         await query.edit_message_text(
@@ -630,6 +665,7 @@ def main():
     app.add_handler(CommandHandler("add",      cmd_add))
     app.add_handler(CommandHandler("details",  cmd_details))
     app.add_handler(CommandHandler("note",     cmd_note))
+    app.add_handler(CommandHandler("delnote",  cmd_delnote))
     app.add_handler(CommandHandler("rate",     cmd_rate))
     app.add_handler(CommandHandler("status",   cmd_status))
     app.add_handler(CommandHandler("upcoming", cmd_upcoming))
