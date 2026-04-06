@@ -328,10 +328,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         nick  = context.user_data.get("status_nick")
         owner = context.user_data.get("status_owner")
         desc  = context.user_data.get("status_desc")
-        await db.set_next_action(nick, owner, desc, due)
+        action_id = await db.set_next_action(nick, owner, desc, due)
         context.user_data.pop("state", None)
+        # Always cancel a previous ASAP job for this listing
+        reminders.cancel_asap_reminders(nick)
+        # Start 3-hourly check-ins if due date is ASAP
+        if due and due.strip().upper() == "ASAP" and action_id:
+            reminders.schedule_asap_reminders(context.bot, nick, action_id, owner, desc)
+            asap_note = "\n\n⏰ I'll check in every 3 hours until this is updated."
+        else:
+            asap_note = ""
         due_str = f"  ·  due *{due}*" if due else ""
-        await reply(update, f"✓ Next action set for *{nick}*:\n→ *{owner}*: {desc}{due_str}")
+        await reply(update, f"✓ Next action set for *{nick}*:\n→ *{owner}*: {desc}{due_str}{asap_note}")
         return
 
     if state == AWAIT_PHOTO_NOTE:

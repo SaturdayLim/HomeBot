@@ -231,18 +231,33 @@ async def get_media_count(nickname: str) -> int:
             row = await cur.fetchone()
             return row[0] if row else 0
 
-async def set_next_action(nickname: str, owner: str, description: str, due_date=None):
+async def set_next_action(nickname: str, owner: str, description: str, due_date=None) -> Optional[int]:
+    """Insert a next action and return its id, or None if listing not found."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT id FROM listings WHERE nickname=?", (nickname,)) as cur:
             row = await cur.fetchone()
             if not row:
-                return
+                return None
             listing_id = row[0]
-        await db.execute(
+        cur = await db.execute(
             "INSERT INTO next_actions (listing_id, owner, description, due_date) VALUES (?, ?, ?, ?)",
             (listing_id, owner, description, due_date)
         )
         await db.commit()
+        return cur.lastrowid
+
+async def get_asap_actions() -> list[dict]:
+    """Return all active listings whose latest next action has due_date = 'ASAP'."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT l.nickname, na.id as action_id, na.owner, na.description
+            FROM listings l
+            JOIN next_actions na ON na.listing_id = l.id
+              AND na.id = (SELECT id FROM next_actions WHERE listing_id = l.id ORDER BY created_at DESC LIMIT 1)
+            WHERE l.status = 'ACTIVE' AND UPPER(na.due_date) = 'ASAP'
+        """) as cur:
+            return [dict(r) for r in await cur.fetchall()]
 
 async def get_next_action(nickname: str) -> Optional[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
