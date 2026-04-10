@@ -20,7 +20,6 @@ import formatting as fmt
 from scraper import scrape_listing, format_parsed_card
 from importer import generate_template_csv, parse_import_csv
 import reminders
-import summariser
 
 load_dotenv()
 logging.basicConfig(level=logging.INFO)
@@ -92,9 +91,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "`/restore [name]` — recover archived listing\n"
         "`/media [name]` — check photos\n\n"
         "📋 *Full details* button — all notes, agent info, next action\n"
-        "🤖 *AI Summary* button — Claude reads your notes and gives a verdict\n"
-        "📐 *Mark as floorplan* — tag one photo as the reference floorplan;\n"
-        "   it will appear automatically with full details / AI summary"
+        "🔗 *Open listing* button — jump to original listing URL\n"
+        "📐 *Mark as floorplan* — tag one photo as the reference plan;\n"
+        "   it sends automatically when you open full details\n"
+        "📎 *View photos* button — sends all other attached photos"
     )
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -416,7 +416,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             listing["na_due"]   = na["due_date"]
         await query.message.reply_text(
             fmt.format_quick_card(listing),
-            reply_markup=kb.full_details_button(nick),
+            reply_markup=kb.full_details_button(nick, listing.get("url")),
             parse_mode=ParseMode.MARKDOWN)
         return
 
@@ -449,75 +449,6 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await edit_or_reply(update,
             fmt.format_summary_card(listing, notes, other_count),
             keyboard=keyboard)
-        return
-
-    if data.startswith("ai_summary:"):
-        nick    = data.split(":", 1)[1]
-        listing = await db.get_listing(nick)
-        if not listing:
-            await query.message.reply_text("Listing not found."); return
-
-        # Show "thinking" state immediately
-        try:
-            await query.edit_message_text(
-                f"🤖 Generating AI summary for *{nick}*…",
-                parse_mode=ParseMode.MARKDOWN)
-        except Exception:
-            pass
-
-        notes  = await db.get_notes(nick)
-        media  = await db.get_media(nick)
-        na     = await db.get_next_action(nick)
-        if na:
-            listing["na_owner"] = na["owner"]
-            listing["na_desc"]  = na["description"]
-            listing["na_due"]   = na["due_date"]
-
-        floorplan   = next((m for m in media if (m.get("caption") or "").lower() == "floorplan"), None)
-        other_count = sum(1 for m in media if (m.get("caption") or "").lower() != "floorplan")
-
-        # Send floorplan photo separately (can't embed photos in text messages)
-        if floorplan:
-            try:
-                await query.message.reply_photo(
-                    floorplan["telegram_file_id"],
-                    caption=f"📐 Floorplan — {nick}",
-                )
-            except Exception:
-                pass
-
-        ai_text = await summariser.summarise_listing(listing, notes)
-        rating  = listing.get("rating", "UNRATED")
-
-        lines = [
-            f"*{nick}* — 🤖 AI Summary",
-            f"{fmt.RATING_EMOJI[rating]} {fmt.RATING_LABEL[rating]}",
-            "",
-            ai_text,
-        ]
-        if listing.get("agent_name"):
-            agent = listing["agent_name"]
-            if listing.get("agent_contact"):
-                agent += f"  ·  {listing['agent_contact']}"
-            lines += ["", f"👤 {agent}"]
-        na_owner = listing.get("na_owner")
-        na_desc  = listing.get("na_desc")
-        na_due   = listing.get("na_due")
-        if na_owner and na_desc:
-            due_str = f"  ·  due {na_due}" if na_due else ""
-            lines += ["", "⏭ *Next action*", f"→ {na_owner}:  {na_desc}{due_str}"]
-
-        keyboard = kb.send_photos_button(nick, other_count) if other_count > 0 else None
-        try:
-            await query.edit_message_text(
-                "\n".join(lines),
-                reply_markup=keyboard,
-                parse_mode=ParseMode.MARKDOWN)
-        except Exception:
-            await query.message.reply_text(
-                "\n".join(lines),
-                reply_markup=keyboard,
-                parse_mode=ParseMode.MARKDOWN)
         return
 
     if data.startswith("send_photos:"):

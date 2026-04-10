@@ -97,11 +97,11 @@ def note_picker(notes: list, nickname: str) -> InlineKeyboardMarkup:
     buttons.append([InlineKeyboardButton("✕ Cancel", callback_data="cancel")])
     return InlineKeyboardMarkup(buttons)
 
-def full_details_button(nickname: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("📋 Full details", callback_data=f"full_view:{nickname}"),
-        InlineKeyboardButton("🤖 AI Summary",   callback_data=f"ai_summary:{nickname}"),
-    ]])
+def full_details_button(nickname: str, url: str = None) -> InlineKeyboardMarkup:
+    row = [InlineKeyboardButton("📋 Full details", callback_data=f"full_view:{nickname}")]
+    if url:
+        row.append(InlineKeyboardButton("🔗 Open listing", url=url))
+    return InlineKeyboardMarkup([row])
 
 def send_photos_button(nickname: str, count: int) -> InlineKeyboardMarkup:
     label = f"📎 View {count} photo{'s' if count != 1 else ''}"
