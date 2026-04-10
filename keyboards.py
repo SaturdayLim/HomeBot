@@ -21,6 +21,7 @@ EDIT_FIELDS = [
     ("🚇 MRT",                 "mrt"),
     ("👤 Agent name",          "agent_name"),
     ("📞 Agent contact",       "agent_contact"),
+    ("🔗 Listing URL",         "url"),
 ]
 
 def listing_picker(nicknames: list, action: str) -> InlineKeyboardMarkup:

@@ -298,7 +298,7 @@ async def get_next_action(nickname: str) -> Optional[dict]:
 
 EDITABLE_FIELDS = frozenset({
     "address", "rent_sgd", "size_sqft", "floor_level",
-    "mrt", "agent_name", "agent_contact",
+    "mrt", "agent_name", "agent_contact", "url",
 })
 
 async def update_listing_field(nickname: str, field: str, value):
