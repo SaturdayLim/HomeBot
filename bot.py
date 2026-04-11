@@ -30,6 +30,10 @@ MICHAEL_ID     = int(os.getenv("MICHAEL_TELEGRAM_ID", "0"))
 NATALIE_ID_STR = os.getenv("NATALIE_TELEGRAM_ID", "REPLACE_ME")
 NATALIE_ID     = int(NATALIE_ID_STR) if NATALIE_ID_STR.isdigit() else None
 
+# Only these two users may interact with the bot
+ALLOWED_IDS    = {uid for uid in (MICHAEL_ID, NATALIE_ID) if uid}
+ALLOWED        = filters.User(user_ids=list(ALLOWED_IDS))
+
 AWAIT_NICKNAME      = "await_nickname"
 AWAIT_STATUS_DESC   = "await_status_desc"
 AWAIT_STATUS_DATE   = "await_status_date"
@@ -400,6 +404,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ── Callback handler ──────────────────────────────────────────────────────────
 
 async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ALLOWED_IDS:
+        return
     query = update.callback_query
     await query.answer()
     data  = query.data
@@ -704,24 +710,24 @@ async def _next_import_row(update: Update, context: ContextTypes.DEFAULT_TYPE, c
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start",    cmd_start))
-    app.add_handler(CommandHandler("help",     cmd_help))
-    app.add_handler(CommandHandler("add",      cmd_add))
-    app.add_handler(CommandHandler("details",  cmd_details))
-    app.add_handler(CommandHandler("note",     cmd_note))
-    app.add_handler(CommandHandler("delnote",  cmd_delnote))
-    app.add_handler(CommandHandler("rate",     cmd_rate))
-    app.add_handler(CommandHandler("status",   cmd_status))
-    app.add_handler(CommandHandler("upcoming", cmd_upcoming))
-    app.add_handler(CommandHandler("archive",  cmd_archive))
-    app.add_handler(CommandHandler("archived", cmd_archived))
-    app.add_handler(CommandHandler("restore",  cmd_restore))
-    app.add_handler(CommandHandler("media",    cmd_media))
-    app.add_handler(CommandHandler("edit",     cmd_edit))
-    app.add_handler(CommandHandler("import",   cmd_import))
-    app.add_handler(MessageHandler(filters.PHOTO,            handle_photo))
-    app.add_handler(MessageHandler(filters.Document.ALL,     handle_document))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(CommandHandler("start",    cmd_start,    filters=ALLOWED))
+    app.add_handler(CommandHandler("help",     cmd_help,     filters=ALLOWED))
+    app.add_handler(CommandHandler("add",      cmd_add,      filters=ALLOWED))
+    app.add_handler(CommandHandler("details",  cmd_details,  filters=ALLOWED))
+    app.add_handler(CommandHandler("note",     cmd_note,     filters=ALLOWED))
+    app.add_handler(CommandHandler("delnote",  cmd_delnote,  filters=ALLOWED))
+    app.add_handler(CommandHandler("rate",     cmd_rate,     filters=ALLOWED))
+    app.add_handler(CommandHandler("status",   cmd_status,   filters=ALLOWED))
+    app.add_handler(CommandHandler("upcoming", cmd_upcoming, filters=ALLOWED))
+    app.add_handler(CommandHandler("archive",  cmd_archive,  filters=ALLOWED))
+    app.add_handler(CommandHandler("archived", cmd_archived, filters=ALLOWED))
+    app.add_handler(CommandHandler("restore",  cmd_restore,  filters=ALLOWED))
+    app.add_handler(CommandHandler("media",    cmd_media,    filters=ALLOWED))
+    app.add_handler(CommandHandler("edit",     cmd_edit,     filters=ALLOWED))
+    app.add_handler(CommandHandler("import",   cmd_import,   filters=ALLOWED))
+    app.add_handler(MessageHandler(filters.PHOTO        & ALLOWED, handle_photo))
+    app.add_handler(MessageHandler(filters.Document.ALL & ALLOWED, handle_document))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ALLOWED, handle_text))
     app.add_handler(CallbackQueryHandler(handle_callback))
 
     async def on_startup(app):
