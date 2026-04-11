@@ -32,7 +32,7 @@ NATALIE_ID     = int(NATALIE_ID_STR) if NATALIE_ID_STR.isdigit() else None
 
 # Only these two users may interact with the bot
 ALLOWED_IDS    = {uid for uid in (MICHAEL_ID, NATALIE_ID) if uid}
-ALLOWED        = filters.User(user_ids=list(ALLOWED_IDS))
+ALLOWED        = filters.User(user_id=list(ALLOWED_IDS))
 
 AWAIT_NICKNAME      = "await_nickname"
 AWAIT_STATUS_DESC   = "await_status_desc"
